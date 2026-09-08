@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.pytest_tmp/
+
+# 虚拟环境
+.venv/
+venv/
+
+# 下载的仓库数据
+repos/
+
+# IDE
+.idea/
+.vscode/

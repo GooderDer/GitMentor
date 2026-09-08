@@ -1,0 +1,62 @@
+开发路线
+先说清楚整体节奏原则：
+
+每一 Phase 只引入必要的依赖，且你都会说明为什么。
+每一 Phase 结束都有可运行的验证（脚本或测试）。
+每完成一个核心模块，你给出「解决什么问题 / 核心流程 / 3~5 个关键函数 / 输入 / 输出 / 为什么这样设计 / 面试会问什么」。
+Phase 0（前置止血，很小，建议和 Phase 1 一起做）
+要实现什么：补 requirements.txt、加 .gitignore、修 clone_repository 和 analyze_repository 的基础 bug、main.py 用变量而非硬编码。
+为什么需要：现在 from git import Repo 直接报错，项目无法运行，任何后续阶段都建立在它之上。
+文件：requirements.txt、.gitignore（新增）、tools/github_tool.py、analyzer/repo_analyzer.py、main.py。
+可验证结果：python main.py 能跑通，输出正确的文件统计和 README 路径。
+核心知识：Python 虚拟环境与依赖管理、.gitignore 的作用、pathlib.Path。
+Phase 1：完善 Repository Analyzer
+要实现什么：把 analyze_repository 从"数文件"升级为真正的项目分析器——识别主要语言、依赖文件（requirements.txt / pyproject.toml / package.json / go.mod / Gemfile 等）、重要入口文件（main.py、app.py、setup.py 等）、输出结构化的 RepoInfo。
+为什么需要：这是后续 Chunking、RAG、Agent 的数据源头。不先知道"这个项目是什么语言、有哪些关键文件"，后面无从谈起。
+新增/修改文件：analyzer/repo_analyzer.py（扩展）、新增 analyzer/models.py（用 dataclass 定义 RepoInfo 等数据结构，避免裸 dict）、analyzer/__init__.py。
+可验证结果：写一个 tests/test_analyzer.py，对一个已知小仓库断言"语言识别正确、依赖文件被列出、README 找到"。
+核心知识：pathlib 遍历、按后缀识别语言的常见做法、依赖清单文件的命名约定、dataclass 结构化建模。
+Phase 2：文档与代码 Chunking
+要实现什么：把 README 和代码文件读进来，按可检索的语义块切分（如 README 按标题/段落切，代码按函数/类切）。产出 Chunk（含文本、来源文件、行号、类型）。
+为什么需要：Embedding 和向量库的最小单元是 chunk。整篇塞进去会检索不精确，切太碎会丢失上下文。这一层决定了 RAG 质量。
+新增/修改文件：新增 chunker/ 包（__init__.py、text_splitter.py 用于文档、code_splitter.py 用于代码）。代码切分初期可以先用 ast 按函数/类切 Python，其它语言先用固定长度/换行切，保持简单。
+可验证结果：tests/test_chunker.py 断言"README 被切成多个块、每个代码 chunk 都标注了来源文件与行号、无空块"。
+核心知识：什么是 chunk、chunk 大小与 overlap（重叠）的意义、代码切分 vs 文档切分的区别、ast 模块解析 Python。
+Phase 3：Embedding + Vector Database
+要实现什么：① 封装一个 Embedder（调用 LLM 的 embedding 接口，把文本转成向量）；② 封装一个 VectorStore（用 Chroma 或 FAISS 存向量 + 元数据）；③ 提供 add_chunks() 和 search(query, top_k)。
+为什么需要：这是"语义检索"的核心——把问题也转成向量，找最相近的 chunk，而不是关键词匹配。
+新增/修改文件：新增 vectorstore/ 包（embedder.py、store.py）。依赖引入 Chroma（或 FAISS）+ 一个 embedding SDK。为什么选它：Chroma 是纯 Python、易装、自带持久化和元数据过滤，比 FAISS 更适合"讲解 + 展示"；FAISS 更偏底层性能，当前规模用不上。
+可验证结果：tests/test_vectorstore.py 里塞入几十个 chunk，search("这个项目是做什么的") 能返回语义相关（而非字面匹配）的 chunk，并带来源元数据。
+核心知识：Embedding 是什么（把语义映射到向量空间）、余弦相似度、向量数据库和普通数据库的区别、为什么用向量而不是全文检索。
+Phase 4：RAG Repository Q&A
+要实现什么：串联"Query → Embedding → 向量检索 top-k → 把检索结果拼进 prompt → LLM 生成回答 → 返回答案 + 引用来源"。封装成 rag.py 的 ask(question)。
+为什么需要：这是 GitMentor 第一个用户可见的价值点——"基于仓库内容回答问题"。它把 Phase 2/3 的成果串起来。
+新增/修改文件：新增 rag/ 包（retriever.py、qa.py），引入一个 LLM SDK。核心知识集中在"检索增强生成"这条链路。
+可验证结果：一个 demo_rag.py，对一个真实仓库跑一次 ask("这个项目的核心功能是什么？")，输出答案并列出引用到的文件。
+核心知识：RAG 完整链路、为什么 RAG 能减少幻觉、prompt 里如何组织上下文、top_k 与答案质量的关系。
+Phase 5：Tool Calling
+要实现什么：给 LLM 定义一组工具（search_file、read_file、analyze_project 等），让模型自己决定什么时候调用哪个工具，而不是我们写死流程。
+为什么需要：RAG 只能"检索后回答"，而 Tool Calling 让模型能"主动查文件、读指定文件、调分析器"，是 Agent 的前置能力，也是"指定文件/函数解释"的关键。
+新增/修改文件：新增 tools/ 下的具体工具（file_search.py、file_read.py），复用 Phase 1 的分析器作为 analyze_project 工具；新增 llm/tool_executor.py 负责"模型返回工具调用 → 执行 → 结果回填"的循环。
+可验证结果：demo_tool.py 里问"读一下 main.py 并解释它做什么"，模型会自主触发 read_file('main.py') 再作答。
+核心知识：什么是 Function/Tool Calling、工具描述的 JSON Schema、工具调用循环（多轮直到模型不再请求工具）、何时用 RAG 何时用 Tool。
+Phase 6：Agent Workflow
+要实现什么：在 Tool Calling 之上加一层编排：一个 Agent 类，接收任务 → 规划 → 循环调用工具 → 输出结果。把"项目概览 / 结构解释 / 代码问答 / 指定文件解释 / 学习路线生成"变成 agent 的几个能力。
+为什么需要：这是最终目标的"Agent"落点，也是面试的核心卖点——一个自主决策、调用工具的循环体。
+新增/修改文件：新增 agent/agent.py（Agent 主循环）、prompts/ 下放系统提示词模板（如 overview.txt、roadmap.txt）。复用 Phase 5 的工具执行器。
+可验证结果：demo_agent.py 输入一个 repo，agent 输出一份"项目概览 + 学习路线"。
+核心知识：Agent 循环（ReAct 思路：思考→行动→观察）、系统提示词设计、如何防止 agent 无限循环、与单纯 Tool Calling 的区别。
+Phase 7：FastAPI / 简单交互界面
+要实现什么：用 FastAPI 包一层 HTTP 接口（POST /analyze、POST /ask），配一个最简单的网页或命令行交互。
+为什么需要：让项目从"脚本"变成"可展示的应用"，也符合你后期列出的 FastAPI 方向。
+新增/修改文件：新增 app.py（或 api/ 包）+ 简单前端模板；依赖引入 FastAPI + uvicorn。
+可验证结果：启动服务后，浏览器输入一个 repo URL，能拿到概览和问答结果。
+核心知识：FastAPI 的请求/响应模型、依赖注入、如何把已有模块接成 API。
+Phase 8：测试、Docker、README 和项目展示
+要实现什么：补齐单元测试与一个端到端 demo；写 Dockerfile；完善 README（架构图、快速开始、示例截图）；整理目录让项目适合 GitHub 展示和面试讲解。
+为什么需要：前面强调过——项目最终要"能展示、能讲"，不是"能跑"。
+新增/修改文件：tests/ 全套、Dockerfile、docker-compose.yml（可选）、README.md、架构文档。
+可验证结果：pytest 全绿；docker build && docker run 能起服务；README 里任何一个新人照着能跑起来。
+核心知识：pytest 测试组织、Docker 镜像分层、如何写一份"能打动面试官"的 README。
+三、建议
+向量库我倾向 Chroma（而非 FAISS）：纯 Python、安装省事、自带持久化和元数据过滤，更适合我"学习 + 讲解 + 展示"的目标；FAISS 是 C++ 底层、性能更强但你当前规模用不到，还会增加讲解负担。这个选择等真正到 Phase 3 时再最终定，不影响前两个阶段。
