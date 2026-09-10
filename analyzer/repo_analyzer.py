@@ -10,7 +10,7 @@ from analyzer.models import RepoInfo
 IGNORED_DIRS = {
     ".git", ".venv", "venv", "__pycache__", "node_modules",
     ".idea", ".vscode", "dist", "build", ".tox", ".mypy_cache",
-    ".pytest_cache", ".eggs",
+    ".pytest_cache", ".eggs", "repos",
 }
 
 # 文件后缀 -> 语言名
