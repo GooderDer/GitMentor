@@ -54,7 +54,7 @@ README_NAMES = {
 
 def analyze_repository(repo_path) -> RepoInfo:
     """分析一个本地仓库，返回结构化的 RepoInfo。"""
-    root = Path(repo_path)
+    root = Path(repo_path).resolve()
     info = RepoInfo(name=root.name, path=str(root))
 
     for file in _iter_source_files(root):
