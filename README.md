@@ -55,6 +55,44 @@ python demo_rag.py . "这个项目如何进行代码切分？"
 第一次运行本地 Embedding 时会从 Hugging Face 下载模型；之后模型会被缓存。
 整个流程不需要 OpenAI API Key，也不会消耗在线 API 额度。
 
+## 常用入口
+
+运行全部测试：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+启动 FastAPI 服务：
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn app:app --reload
+```
+
+打开交互式 API 文档：
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+运行 RAG 演示：
+
+```powershell
+.\.venv\Scripts\python.exe demo_rag.py .
+```
+
+运行 Agent 演示：
+
+```powershell
+.\.venv\Scripts\python.exe demo_agent.py .
+```
+
+运行 Tool Calling 演示：
+
+```powershell
+.\.venv\Scripts\python.exe demo_tool.py .
+```
+
 ## 项目结构
 
 ```text
